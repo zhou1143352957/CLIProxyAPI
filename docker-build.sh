@@ -7,6 +7,16 @@
 
 set -euo pipefail
 
+# OrbStack and some installs ship docker-compose but not the "docker compose" plugin.
+if docker compose version >/dev/null 2>&1; then
+  compose() { docker compose "$@"; }
+elif command -v docker-compose >/dev/null 2>&1; then
+  compose() { docker-compose "$@"; }
+else
+  echo "Error: Docker Compose not found. Install docker-compose or the docker compose plugin."
+  exit 1
+fi
+
 if [[ "${1:-}" != "" ]]; then
   echo "Error: unknown option '${1}'."
   echo "Usage: ./docker-build.sh"
@@ -23,9 +33,9 @@ read -r -p "Enter choice [1-2]: " choice
 case "$choice" in
   1)
     echo "--- Running with Pre-built Image ---"
-    docker compose up -d --remove-orphans --no-build
+    compose up -d --remove-orphans --no-build
     echo "Services are starting from remote image."
-    echo "Run 'docker compose logs -f' to see the logs."
+    echo "Run 'docker-compose logs -f' (or 'docker compose logs -f') to see the logs."
     ;;
   2)
     echo "--- Building from Source and Running ---"
@@ -45,16 +55,16 @@ case "$choice" in
     export CLI_PROXY_IMAGE="cli-proxy-api:local"
 
     echo "Building the Docker image..."
-    docker compose build \
+    compose build \
       --build-arg VERSION="${VERSION}" \
       --build-arg COMMIT="${COMMIT}" \
       --build-arg BUILD_DATE="${BUILD_DATE}"
 
     echo "Starting the services..."
-    docker compose up -d --remove-orphans --pull never
+    compose up -d --remove-orphans --pull never
 
     echo "Build complete. Services are starting."
-    echo "Run 'docker compose logs -f' to see the logs."
+    echo "Run 'docker-compose logs -f' (or 'docker compose logs -f') to see the logs."
     ;;
   *)
     echo "Invalid choice. Please enter 1 or 2."
