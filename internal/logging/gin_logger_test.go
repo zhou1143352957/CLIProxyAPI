@@ -70,6 +70,7 @@ func TestIsAIAPIPathIncludesPublicAPIGroups(t *testing.T) {
 		"/v1beta/interactions",
 		"/openai/v1/videos",
 		"/backend-api/codex/responses",
+		"/muse-code/models",
 	} {
 		if !isAIAPIPath(path) {
 			t.Fatalf("expected %s to be treated as AI API path", path)
@@ -80,6 +81,7 @@ func TestIsAIAPIPathIncludesPublicAPIGroups(t *testing.T) {
 		"/v10/models",
 		"/openai/v10/videos",
 		"/backend-api/codex-status",
+		"/muse-code-status",
 	} {
 		if isAIAPIPath(path) {
 			t.Fatalf("expected %s not to be treated as AI API path", path)
@@ -208,6 +210,30 @@ func TestGinLogrusLoggerKeepsMaskedQueryReadable(t *testing.T) {
 	wantSuffix := `GET     "/v1/models?key=sk-0...cdef&limit=5"`
 	if !strings.HasSuffix(message, wantSuffix) {
 		t.Errorf("access log message = %q, want suffix %q", message, wantSuffix)
+	}
+}
+
+func TestGinLogrusLoggerRedactsV8OAuthQueries(t *testing.T) {
+	logger := log.StandardLogger()
+	previousHooks := logger.ReplaceHooks(make(log.LevelHooks))
+	previousLevel := logger.GetLevel()
+	hook := logtest.NewLocal(logger)
+	logger.SetLevel(log.InfoLevel)
+	t.Cleanup(func() { logger.ReplaceHooks(previousHooks); logger.SetLevel(previousLevel) })
+	engine := gin.New()
+	engine.Use(GinLogrusLogger())
+	for _, path := range []string{"/v8/management/oauth/callback", "/v8/management/oauth/status", "/v8/management/oauth/session"} {
+		engine.GET(path, func(c *gin.Context) { c.Status(http.StatusBadRequest) })
+		hook.Reset()
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path+"?state=secret-state&code=secret-code&client_id=issued-secret&error=secret-error", nil))
+		entries := hook.AllEntries()
+		if len(entries) != 1 || !strings.Contains(entries[0].Message, path) {
+			t.Fatal("expected access log for OAuth path")
+		}
+		if strings.Contains(entries[0].Message, "secret") || strings.Contains(entries[0].Message, "?") {
+			t.Fatal("OAuth callback or state leaked into access log")
+		}
 	}
 }
 
